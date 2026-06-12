@@ -2,6 +2,7 @@ export type AssetStatus = 'draft' | 'pending' | 'approved' | 'rejected';
 export type ValuationLevel = 'S' | 'A' | 'B' | 'C' | 'D';
 export type RiskLevel = 'high' | 'medium' | 'low';
 export type UpdateFrequency = 'realtime' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+export type ScenarioType = 'conservative' | 'base' | 'optimistic';
 
 export interface DataSource {
   id: string;
@@ -71,6 +72,57 @@ export interface QuoteScheme {
   isRecommended?: boolean;
 }
 
+export interface ValuationScenario {
+  type: ScenarioType;
+  name: string;
+  priceMultiplier: number;
+  scoreMultiplier: number;
+  estimatedValue: number;
+  totalScore: number;
+  valuationLevel: ValuationLevel;
+  note?: string;
+}
+
+export interface ScenarioConfig {
+  conservative: ValuationScenario;
+  base: ValuationScenario;
+  optimistic: ValuationScenario;
+  updatedAt: string;
+}
+
+export interface FieldChange {
+  field: string;
+  label: string;
+  category: 'basic' | 'metrics' | 'valuation' | 'risk' | 'quote';
+  oldValue: unknown;
+  newValue: unknown;
+  oldDisplay: string;
+  newDisplay: string;
+}
+
+export interface VersionDiff {
+  id: string;
+  assetId: string;
+  fromRecordId: string;
+  toRecordId: string;
+  changes: FieldChange[];
+  calculatedAt: string;
+}
+
+export interface ModificationTrace {
+  id: string;
+  assetId: string;
+  module: 'basic' | 'metrics' | 'valuation' | 'risk' | 'quote' | 'approval';
+  action: 'add' | 'update' | 'delete' | 'modify';
+  fieldName?: string;
+  fieldLabel?: string;
+  itemName?: string;
+  oldValue?: string;
+  newValue?: string;
+  operator?: string;
+  timestamp: string;
+}
+
 export interface ApprovalRecord {
   id: string;
   assetId: string;
@@ -80,6 +132,9 @@ export interface ApprovalRecord {
   comment: string;
   timestamp: string;
   previousSnapshot?: Partial<DataAsset>;
+  nextSnapshot?: Partial<DataAsset>;
+  versionDiff?: VersionDiff;
+  traces?: ModificationTrace[];
 }
 
 export interface DataAsset {
@@ -108,6 +163,8 @@ export interface DataAsset {
   valuationLevel: ValuationLevel;
   estimatedValue: number;
 
+  scenarioConfig?: ScenarioConfig;
+
   risks: RiskItem[];
 
   quoteSchemes: QuoteScheme[];
@@ -115,6 +172,7 @@ export interface DataAsset {
 
   approvalRecords: ApprovalRecord[];
   currentApprover?: string;
+  modificationTraces: ModificationTrace[];
 }
 
 export interface AppState {

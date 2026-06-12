@@ -646,7 +646,7 @@ function MetricsInput() {
               min={0}
               placeholder="请输入交易价格"
               formatter={(value) => `¥ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-              parser={(value) => value!.replace(/\$\s?|(,*)/g, '') as unknown as number}
+              parser={(value) => Number(value!.replace(/\$\s?|(,*)/g, '')) as any}
             />
           </Form.Item>
           <Form.Item name="buyer" label="受让方（买方）" rules={[{ required: true, message: '请输入受让方' }]}>

@@ -18,6 +18,7 @@ import {
   Alert,
   List,
   Statistic,
+  Avatar,
 } from 'antd';
 import {
   DatabaseOutlined,
@@ -58,9 +59,12 @@ function ReportCenter() {
     'basic',
     'metrics',
     'valuation',
+    'scenario',
     'risk',
     'quote',
+    'quoteDetail',
     'approval',
+    'versionDiff',
   ]);
   const [form] = Form.useForm();
 
@@ -105,6 +109,7 @@ function ReportCenter() {
 
         if (includeSections.includes('valuation')) {
           y += 4;
+          if (y > 250) { doc.addPage(); y = 20; }
           addText('2. Valuation Result', 14, 'bold');
           addText(`Valuation Level: ${asset.valuationLevel}`, 11);
           addText(`Total Score: ${asset.totalScore}/100`, 11);
@@ -128,13 +133,44 @@ function ReportCenter() {
           y = (doc as any).lastAutoTable.finalY + 10;
         }
 
+        if (includeSections.includes('scenario') && asset.scenarioConfig) {
+          y += 4;
+          if (y > 250) { doc.addPage(); y = 20; }
+          addText('3. Scenario Analysis', 14, 'bold');
+          addText('Price and score multipliers simulate different market scenarios', 10);
+
+          const scenarioData = [
+            ['Conservative', `×${asset.scenarioConfig.conservative.priceMultiplier}`, `×${asset.scenarioConfig.conservative.scoreMultiplier}`,
+             asset.scenarioConfig.conservative.totalScore, asset.scenarioConfig.conservative.valuationLevel,
+             formatMoney(asset.scenarioConfig.conservative.estimatedValue)],
+            ['Base', `×${asset.scenarioConfig.base.priceMultiplier}`, `×${asset.scenarioConfig.base.scoreMultiplier}`,
+             asset.scenarioConfig.base.totalScore, asset.scenarioConfig.base.valuationLevel,
+             formatMoney(asset.scenarioConfig.base.estimatedValue)],
+            ['Optimistic', `×${asset.scenarioConfig.optimistic.priceMultiplier}`, `×${asset.scenarioConfig.optimistic.scoreMultiplier}`,
+             asset.scenarioConfig.optimistic.totalScore, asset.scenarioConfig.optimistic.valuationLevel,
+             formatMoney(asset.scenarioConfig.optimistic.estimatedValue)],
+          ];
+
+          (doc as any).autoTable({
+            startY: y,
+            head: [['Scenario', 'Price Mult', 'Score Mult', 'Score', 'Level', 'Est. Value']],
+            body: scenarioData,
+            styles: { fontSize: 9 },
+            headStyles: { fillColor: [114, 46, 209] },
+          });
+          y = (doc as any).lastAutoTable.finalY + 8;
+
+          addText(`Value Range: ${formatMoney(asset.scenarioConfig.conservative.estimatedValue)} - ${formatMoney(asset.scenarioConfig.optimistic.estimatedValue)}`, 10);
+          const volatility = (((asset.scenarioConfig.optimistic.estimatedValue - asset.scenarioConfig.conservative.estimatedValue) / 2 / asset.estimatedValue) * 100).toFixed(1);
+          addText(`Volatility: ±${volatility}%`, 10);
+          y += 4;
+        }
+
         if (includeSections.includes('risk')) {
           y += 4;
-          if (y > 250) {
-            doc.addPage();
-            y = 20;
-          }
-          addText('3. Risk Assessment', 14, 'bold');
+          if (y > 250) { doc.addPage(); y = 20; }
+          const riskSectionNum = includeSections.includes('scenario') && asset.scenarioConfig ? '4' : '3';
+          addText(`${riskSectionNum}. Risk Assessment`, 14, 'bold');
           if (asset.risks.length > 0) {
             const riskData = asset.risks.map((r) => [
               riskTypeLabel[r.type],
@@ -157,11 +193,14 @@ function ReportCenter() {
 
         if (includeSections.includes('quote')) {
           y += 4;
-          if (y > 250) {
-            doc.addPage();
-            y = 20;
+          if (y > 250) { doc.addPage(); y = 20; }
+          let quoteSectionNum = '4';
+          if (includeSections.includes('risk')) {
+            quoteSectionNum = includeSections.includes('scenario') && asset.scenarioConfig ? '5' : '4';
+          } else if (includeSections.includes('scenario') && asset.scenarioConfig) {
+            quoteSectionNum = '4';
           }
-          addText('4. Quote Schemes', 14, 'bold');
+          addText(`${quoteSectionNum}. Quote Schemes`, 14, 'bold');
           if (asset.quoteSchemes.length > 0) {
             const quoteData = asset.quoteSchemes.map((q) => [
               q.name,
@@ -181,6 +220,74 @@ function ReportCenter() {
             y = (doc as any).lastAutoTable.finalY + 10;
           } else {
             addText('No quote schemes defined.', 11);
+          }
+        }
+
+        if (includeSections.includes('quoteDetail') && asset.quoteSchemes.length > 0) {
+          asset.quoteSchemes.forEach((scheme, idx) => {
+            y += 4;
+            if (y > 230) { doc.addPage(); y = 20; }
+            addText(`Quote Detail - ${scheme.name}`, 12, 'bold');
+            addText(`Pricing Model: ${scheme.pricingModel}`, 10);
+            addText(`Base Price: ${formatMoney(scheme.basePrice)}`, 10);
+            const serviceTotal = scheme.serviceCosts.reduce((s, c) => s + c.amount, 0);
+            addText(`Service Cost: ${formatMoney(serviceTotal)}`, 10);
+            addText(`Total Price: ${formatMoney(scheme.totalPrice)}`, 10, 'bold');
+
+            if (scheme.serviceCosts.length > 0 && y < 200) {
+              const costData = scheme.serviceCosts.map((c, i) => [
+                i + 1,
+                c.name,
+                c.description || '-',
+                formatMoney(c.amount),
+              ]);
+              (doc as any).autoTable({
+                startY: y,
+                head: [['#', 'Service Name', 'Description', 'Amount']],
+                body: costData,
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [24, 144, 255] },
+              });
+              y = (doc as any).lastAutoTable.finalY + 8;
+            } else {
+              y += 4;
+            }
+          });
+        }
+
+        if (includeSections.includes('versionDiff')) {
+          const submitRecords = asset.approvalRecords.filter(
+            (r) => r.action === 'submit' && r.versionDiff && r.versionDiff.changes.length > 0
+          );
+          if (submitRecords.length > 0) {
+            y += 4;
+            if (y > 250) { doc.addPage(); y = 20; }
+            addText('Version Comparison', 14, 'bold');
+
+            submitRecords.slice(0, 2).forEach((record) => {
+              if (y > 230) { doc.addPage(); y = 20; }
+              addText(`Submitted: ${formatDateTime(record.timestamp)} by ${record.approver}`, 10);
+              addText(`Changes: ${record.versionDiff?.changes.length} items`, 10);
+
+              if (record.versionDiff && y < 200) {
+                const diffData = record.versionDiff.changes.slice(0, 8).map((c) => [
+                  c.category,
+                  c.label,
+                  c.oldDisplay || '-',
+                  c.newDisplay || '-',
+                ]);
+                (doc as any).autoTable({
+                  startY: y,
+                  head: [['Module', 'Field', 'Before', 'After']],
+                  body: diffData,
+                  styles: { fontSize: 8 },
+                  headStyles: { fillColor: [250, 140, 22] },
+                });
+                y = (doc as any).lastAutoTable.finalY + 8;
+              } else {
+                y += 4;
+              }
+            });
           }
         }
       } else {
@@ -236,8 +343,124 @@ function ReportCenter() {
       message.warning('请先选择数据资产');
       return;
     }
+
+    let dataToExport: unknown = exportData;
+
+    if (reportType === 'single' && asset) {
+      const filteredAsset: Record<string, unknown> = {
+        id: asset.id,
+        name: asset.name,
+        code: asset.code,
+        category: asset.category,
+        industry: asset.industry,
+        description: asset.description,
+        owner: asset.owner,
+        department: asset.department,
+        status: asset.status,
+        createdAt: asset.createdAt,
+        updatedAt: asset.updatedAt,
+      };
+
+      if (includeSections.includes('metrics')) {
+        filteredAsset.dataSources = asset.dataSources;
+        filteredAsset.updateFrequency = asset.updateFrequency;
+        filteredAsset.lastUpdated = asset.lastUpdated;
+        filteredAsset.dataVolume = asset.dataVolume;
+        filteredAsset.coverageScope = asset.coverageScope;
+        filteredAsset.applicationScenarios = asset.applicationScenarios;
+        filteredAsset.historicalPrices = asset.historicalPrices;
+        filteredAsset.historicalAveragePrice = asset.historicalPrices.length > 0
+          ? Math.round(asset.historicalPrices.reduce((s, p) => s + p.price, 0) / asset.historicalPrices.length)
+          : 0;
+      }
+
+      if (includeSections.includes('valuation')) {
+        filteredAsset.scoringCriteria = asset.scoringCriteria;
+        filteredAsset.totalScore = asset.totalScore;
+        filteredAsset.valuationLevel = asset.valuationLevel;
+        filteredAsset.estimatedValue = asset.estimatedValue;
+      }
+
+      if (includeSections.includes('scenario') && asset.scenarioConfig) {
+        filteredAsset.scenarioConfig = asset.scenarioConfig;
+        filteredAsset.valuationRange = {
+          min: asset.scenarioConfig.conservative.estimatedValue,
+          max: asset.scenarioConfig.optimistic.estimatedValue,
+          volatilityPercent: (((asset.scenarioConfig.optimistic.estimatedValue - asset.scenarioConfig.conservative.estimatedValue) / 2 / asset.estimatedValue) * 100).toFixed(1),
+        };
+      }
+
+      if (includeSections.includes('risk')) {
+        filteredAsset.risks = asset.risks;
+      }
+
+      if (includeSections.includes('quote')) {
+        filteredAsset.quoteSchemes = asset.quoteSchemes.map((q) => ({
+          id: q.id,
+          name: q.name,
+          pricingModel: q.pricingModel,
+          basePrice: q.basePrice,
+          serviceCostTotal: q.serviceCosts.reduce((s, c) => s + c.amount, 0),
+          totalPrice: q.totalPrice,
+          isRecommended: q.isRecommended,
+          isSelected: asset.selectedQuoteId === q.id,
+          description: q.description,
+        }));
+        filteredAsset.selectedQuoteId = asset.selectedQuoteId;
+      }
+
+      if (includeSections.includes('quoteDetail')) {
+        filteredAsset.quoteDetails = asset.quoteSchemes.map((q) => ({
+          id: q.id,
+          name: q.name,
+          pricingModel: q.pricingModel,
+          basePrice: q.basePrice,
+          serviceCosts: q.serviceCosts,
+          totalPrice: q.totalPrice,
+          isRecommended: q.isRecommended,
+          description: q.description,
+        }));
+      }
+
+      if (includeSections.includes('approval')) {
+        filteredAsset.approvalRecords = asset.approvalRecords.map((r) => ({
+          id: r.id,
+          approver: r.approver,
+          role: r.role,
+          action: r.action,
+          comment: r.comment,
+          timestamp: r.timestamp,
+        }));
+      }
+
+      if (includeSections.includes('versionDiff')) {
+        const submitRecords = asset.approvalRecords.filter(
+          (r) => r.action === 'submit' && r.versionDiff && r.versionDiff.changes.length > 0
+        );
+        filteredAsset.versionComparisons = submitRecords.map((r) => ({
+          recordId: r.id,
+          timestamp: r.timestamp,
+          submitter: r.approver,
+          submitterRole: r.role,
+          comment: r.comment,
+          changesCount: r.versionDiff?.changes.length || 0,
+          tracesCount: r.traces?.length || 0,
+          changes: r.versionDiff?.changes || [],
+          traces: r.traces || [],
+        }));
+      }
+
+      filteredAsset.exportMetadata = {
+        reportType: 'single-asset',
+        exportedAt: new Date().toISOString(),
+        includedSections: includeSections,
+      };
+
+      dataToExport = filteredAsset;
+    }
+
     exportToJSON(
-      exportData,
+      dataToExport,
       `${reportType === 'single' ? 'asset' : 'assets'}-valuation-${Date.now()}.json`
     );
     message.success('导出成功');
@@ -374,9 +597,12 @@ function ReportCenter() {
                     <Option value="basic">基本信息</Option>
                     <Option value="metrics">指标数据</Option>
                     <Option value="valuation">价值评估</Option>
+                    <Option value="scenario">估值测算（情景分析）</Option>
                     <Option value="risk">风险分析</Option>
                     <Option value="quote">报价方案</Option>
+                    <Option value="quoteDetail">报价明细</Option>
                     <Option value="approval">审批记录</Option>
+                    <Option value="versionDiff">版本对比</Option>
                   </Select>
                 </Form.Item>
               </Col>
@@ -545,9 +771,131 @@ function ReportCenter() {
                 </>
               )}
 
+              {includeSections.includes('scenario') && asset.scenarioConfig && (
+                <>
+                  <h3 style={{ marginBottom: 12 }}>四、估值测算（情景分析）</h3>
+                  <Alert
+                    message="测算说明：基于历史交易均价和综合评分，通过调整价格系数和评分系数，模拟不同市场情景下的预估价值区间"
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                  />
+                  <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                    {(['conservative', 'base', 'optimistic'] as const).map((type) => {
+                      const scenario = asset.scenarioConfig![type];
+                      const colors = {
+                        conservative: { bg: '#fff7e6', border: '#faad14', text: '#fa8c16' },
+                        base: { bg: '#e6f4ff', border: '#1677ff', text: '#1677ff' },
+                        optimistic: { bg: '#f6ffed', border: '#52c41a', text: '#389e0d' },
+                      };
+                      const color = colors[type];
+                      return (
+                        <Col span={8} key={type}>
+                          <div
+                            style={{
+                              padding: 16,
+                              background: color.bg,
+                              border: `1px solid ${color.border}`,
+                              borderRadius: 8,
+                            }}
+                          >
+                            <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                              <Tag color={color.text} style={{ fontSize: 14, padding: '4px 12px' }}>
+                                {scenario.name}
+                              </Tag>
+                            </div>
+                            <Row gutter={[8, 8]}>
+                              <Col span={12}>
+                                <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>价格系数</div>
+                                <div style={{ fontWeight: 600 }}>×{scenario.priceMultiplier}</div>
+                              </Col>
+                              <Col span={12}>
+                                <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>评分系数</div>
+                                <div style={{ fontWeight: 600 }}>×{scenario.scoreMultiplier}</div>
+                              </Col>
+                              <Col span={12}>
+                                <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>调整后评分</div>
+                                <div style={{ fontWeight: 600 }}>{scenario.totalScore}</div>
+                              </Col>
+                              <Col span={12}>
+                                <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>估值等级</div>
+                                <span className={`level-badge level-${scenario.valuationLevel}`}>
+                                  {scenario.valuationLevel}
+                                </span>
+                              </Col>
+                            </Row>
+                            <Divider style={{ margin: '12px 0' }} />
+                            <div style={{ textAlign: 'center' }}>
+                              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', marginBottom: 4 }}>预估价值</div>
+                              <div style={{ fontSize: 22, fontWeight: 700, color: color.text }}>
+                                {formatMoney(scenario.estimatedValue)}
+                              </div>
+                            </div>
+                            {scenario.note && (
+                              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)', marginTop: 8, padding: 8, background: 'rgba(255,255,255,0.5)', borderRadius: 4 }}>
+                                备注：{scenario.note}
+                              </div>
+                            )}
+                          </div>
+                        </Col>
+                      );
+                    })}
+                  </Row>
+                  <Card size="small" title="价值区间分析" style={{ marginBottom: 16 }}>
+                    <Row gutter={16} align="middle">
+                      <Col span={6} style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>保守情景</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#fa8c16' }}>
+                          {formatMoney(asset.scenarioConfig.conservative.estimatedValue)}
+                        </div>
+                      </Col>
+                      <Col span={12}>
+                        <div style={{ position: 'relative', height: 60 }}>
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 25,
+                              left: 0,
+                              right: 0,
+                              height: 10,
+                              background: 'linear-gradient(to right, #faad14, #1677ff, #52c41a)',
+                              borderRadius: 5,
+                            }}
+                          />
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 10,
+                              left: `${((asset.estimatedValue - asset.scenarioConfig.conservative.estimatedValue) /
+                                (asset.scenarioConfig.optimistic.estimatedValue - asset.scenarioConfig.conservative.estimatedValue)) * 100}%`,
+                              transform: 'translateX(-50%)',
+                              textAlign: 'center',
+                            }}
+                          >
+                            <div style={{ fontSize: 10, color: '#1677ff', marginBottom: 2 }}>当前估值</div>
+                            <div style={{ width: 12, height: 12, background: '#1677ff', borderRadius: '50%', border: '2px solid #fff', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} />
+                          </div>
+                        </div>
+                      </Col>
+                      <Col span={6} style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>乐观情景</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#389e0d' }}>
+                          {formatMoney(asset.scenarioConfig.optimistic.estimatedValue)}
+                        </div>
+                      </Col>
+                    </Row>
+                    <div style={{ textAlign: 'center', fontSize: 12, color: 'rgba(0,0,0,0.45)', marginTop: 8 }}>
+                      估值区间：{formatMoney(asset.scenarioConfig.conservative.estimatedValue)} ~ {formatMoney(asset.scenarioConfig.optimistic.estimatedValue)}
+                      （波动 ±{(((asset.scenarioConfig.optimistic.estimatedValue - asset.scenarioConfig.conservative.estimatedValue) / 2 / asset.estimatedValue) * 100).toFixed(1)}%）
+                    </div>
+                  </Card>
+                  <Divider />
+                </>
+              )}
+
               {includeSections.includes('risk') && (
                 <>
-                  <h3 style={{ marginBottom: 12 }}>四、风险提示</h3>
+                  <h3 style={{ marginBottom: 12 }}>五、风险提示</h3>
                   {asset.risks.length === 0 ? (
                     <Empty description="暂无风险记录" style={{ padding: '24px 0', marginBottom: 24 }} />
                   ) : (
@@ -596,7 +944,7 @@ function ReportCenter() {
 
               {includeSections.includes('quote') && (
                 <>
-                  <h3 style={{ marginBottom: 12 }}>五、报价方案</h3>
+                  <h3 style={{ marginBottom: 12 }}>六、报价方案</h3>
                   {asset.quoteSchemes.length === 0 ? (
                     <Empty description="暂无报价方案" style={{ padding: '24px 0', marginBottom: 24 }} />
                   ) : (
@@ -642,9 +990,82 @@ function ReportCenter() {
                 </>
               )}
 
+              {includeSections.includes('quoteDetail') && asset.quoteSchemes.length > 0 && (
+                <>
+                  <h3 style={{ marginBottom: 12 }}>七、报价明细</h3>
+                  {asset.quoteSchemes.map((scheme, idx) => (
+                    <Card
+                      key={scheme.id}
+                      size="small"
+                      title={
+                        <Space>
+                          <span style={{ fontWeight: 600 }}>{idx + 1}. {scheme.name}</span>
+                          {scheme.isRecommended && <Tag color="orange">推荐方案</Tag>}
+                          {asset.selectedQuoteId === scheme.id && <Tag color="blue">已选用</Tag>}
+                        </Space>
+                      }
+                      style={{ marginBottom: 16 }}
+                    >
+                      <Row gutter={16}>
+                        <Col span={8}>
+                          <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>定价模式</div>
+                          <div style={{ fontWeight: 600 }}>{scheme.pricingModel}</div>
+                        </Col>
+                        <Col span={8}>
+                          <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>基础价格</div>
+                          <div style={{ fontWeight: 600 }}>{formatMoney(scheme.basePrice)}</div>
+                        </Col>
+                        <Col span={8}>
+                          <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>服务成本</div>
+                          <div style={{ fontWeight: 600 }}>
+                            {formatMoney(scheme.serviceCosts.reduce((s, c) => s + c.amount, 0))}
+                          </div>
+                        </Col>
+                      </Row>
+                      {scheme.serviceCosts.length > 0 && (
+                        <>
+                          <Divider style={{ margin: '12px 0' }} />
+                          <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', marginBottom: 8 }}>附加服务成本明细：</div>
+                          <Table
+                            size="small"
+                            dataSource={scheme.serviceCosts}
+                            rowKey="id"
+                            pagination={false}
+                            bordered
+                            columns={[
+                              { title: '序号', key: 'idx', width: 60, render: (_, __, i) => i + 1 },
+                              { title: '服务名称', dataIndex: 'name', key: 'name' },
+                              { title: '服务描述', dataIndex: 'description', key: 'desc', render: (v) => v || '-' },
+                              { title: '费用（元）', dataIndex: 'amount', key: 'amount', width: 140, render: (v) => formatMoney(v), align: 'right' },
+                            ]}
+                          />
+                        </>
+                      )}
+                      <Divider style={{ margin: '12px 0' }} />
+                      <Row gutter={16} align="middle">
+                        <Col span={16}>
+                          {scheme.description && (
+                            <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>
+                              方案说明：{scheme.description}
+                            </div>
+                          )}
+                        </Col>
+                        <Col span={8} style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>总报价</div>
+                          <div style={{ fontSize: 24, fontWeight: 700, color: '#1677ff' }}>
+                            {formatMoney(scheme.totalPrice)}
+                          </div>
+                        </Col>
+                      </Row>
+                    </Card>
+                  ))}
+                  <Divider />
+                </>
+              )}
+
               {includeSections.includes('approval') && (
                 <>
-                  <h3 style={{ marginBottom: 12 }}>六、审批记录</h3>
+                  <h3 style={{ marginBottom: 12 }}>八、审批记录</h3>
                   {asset.approvalRecords.length === 0 ? (
                     <Empty description="暂无审批记录" style={{ padding: '24px 0' }} />
                   ) : (
@@ -673,6 +1094,151 @@ function ReportCenter() {
                       )}
                     />
                   )}
+                </>
+              )}
+
+              {includeSections.includes('versionDiff') && (
+                <>
+                  <h3 style={{ marginBottom: 12 }}>九、版本对比</h3>
+                  {(() => {
+                    const submitRecords = asset.approvalRecords.filter(
+                      (r) => r.action === 'submit' && r.versionDiff && r.versionDiff.changes.length > 0
+                    );
+                    if (submitRecords.length === 0) {
+                      return <Empty description="暂无版本对比记录" style={{ padding: '24px 0' }} />;
+                    }
+                    return submitRecords.map((record) => (
+                      <Card
+                        key={record.id}
+                        size="small"
+                        title={
+                          <Space>
+                            <HistoryOutlined style={{ color: '#1677ff' }} />
+                            <span style={{ fontWeight: 600 }}>
+                              提交版本对比 - {formatDateTime(record.timestamp)}
+                            </span>
+                            <Tag color="orange">{record.versionDiff?.changes.length} 项变更</Tag>
+                            {record.traces && record.traces.length > 0 && (
+                              <Tag color="geekblue">{record.traces.length} 条修改痕迹</Tag>
+                            )}
+                          </Space>
+                        }
+                        style={{ marginBottom: 16 }}
+                      >
+                        <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', marginBottom: 12 }}>
+                          提交人：{record.approver}（{record.role}）
+                          {record.comment && ` · 备注：${record.comment}`}
+                        </div>
+                        {record.versionDiff && (
+                          <Table
+                            size="small"
+                            dataSource={record.versionDiff.changes}
+                            rowKey="field"
+                            pagination={false}
+                            bordered
+                            columns={[
+                              {
+                                title: '模块',
+                                dataIndex: 'category',
+                                key: 'category',
+                                width: 100,
+                                render: (v) => {
+                                  const labels: Record<string, string> = {
+                                    basic: '基础信息',
+                                    metrics: '指标数据',
+                                    valuation: '价值评估',
+                                    risk: '风险提示',
+                                    quote: '报价方案',
+                                  };
+                                  const colors: Record<string, string> = {
+                                    basic: 'blue',
+                                    metrics: 'cyan',
+                                    valuation: 'purple',
+                                    risk: 'orange',
+                                    quote: 'green',
+                                  };
+                                  return <Tag color={colors[v]}>{labels[v] || v}</Tag>;
+                                },
+                              },
+                              { title: '字段', dataIndex: 'label', key: 'label', width: 140 },
+                              {
+                                title: '变更前',
+                                dataIndex: 'oldDisplay',
+                                key: 'old',
+                                render: (v) => (
+                                  <span style={{ color: '#fa8c16', textDecoration: 'line-through' }}>
+                                    {v || '-'}
+                                  </span>
+                                ),
+                              },
+                              {
+                                title: '变更后',
+                                dataIndex: 'newDisplay',
+                                key: 'new',
+                                render: (v) => (
+                                  <span style={{ color: '#389e0d', fontWeight: 600 }}>
+                                    {v || '-'}
+                                  </span>
+                                ),
+                              },
+                            ]}
+                          />
+                        )}
+                        {record.traces && record.traces.length > 0 && (
+                          <>
+                            <Divider style={{ margin: '12px 0' }} />
+                            <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', marginBottom: 8 }}>
+                              修改痕迹明细：
+                            </div>
+                            <List
+                              size="small"
+                              dataSource={record.traces}
+                              renderItem={(trace) => (
+                                <List.Item>
+                                  <List.Item.Meta
+                                    avatar={
+                                      <Avatar size="small" style={{
+                                        background: trace.action === 'add' ? '#52c41a' :
+                                          trace.action === 'delete' ? '#ff4d4f' : '#1677ff'
+                                      }}>
+                                        {trace.action === 'add' ? 'A' : trace.action === 'delete' ? 'D' : 'U'}
+                                      </Avatar>
+                                    }
+                                    title={
+                                      <Space>
+                                        <Tag>
+                                          {trace.module === 'basic' ? '基础信息' :
+                                           trace.module === 'metrics' ? '指标数据' :
+                                           trace.module === 'valuation' ? '价值评估' :
+                                           trace.module === 'risk' ? '风险提示' :
+                                           trace.module === 'quote' ? '报价方案' : '审批记录'}
+                                        </Tag>
+                                        <span style={{ fontSize: 13 }}>
+                                          {trace.fieldLabel || trace.itemName || '字段'}
+                                          {trace.oldValue !== undefined && trace.newValue !== undefined && (
+                                            <>
+                                              ：<span style={{ color: '#fa8c16' }}>{trace.oldValue || '空'}</span>
+                                              {' → '}
+                                              <span style={{ color: '#389e0d', fontWeight: 600 }}>{trace.newValue || '空'}</span>
+                                            </>
+                                          )}
+                                        </span>
+                                      </Space>
+                                    }
+                                    description={
+                                      <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)' }}>
+                                        {trace.operator} · {formatDateTime(trace.timestamp)}
+                                      </span>
+                                    }
+                                  />
+                                </List.Item>
+                              )}
+                            />
+                          </>
+                        )}
+                      </Card>
+                    ));
+                  })()}
                 </>
               )}
             </div>

@@ -17,25 +17,34 @@ import {
   Select,
   Slider,
   Modal,
+  Input,
 } from 'antd';
 import {
   InfoCircleOutlined,
   DatabaseOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
+  RiseOutlined,
+  FallOutlined,
+  MinusOutlined,
+  ExperimentOutlined,
 } from '@ant-design/icons';
 import { useAppStore } from '../store/useAppStore';
-import { formatMoney, levelDescription, getLevelProgressColor } from '../utils';
+import { formatMoney, levelDescription, getLevelProgressColor, scenarioLabels } from '../utils';
 import type { ColumnsType } from 'antd/es/table';
-import type { ScoringCriterion } from '../types';
+import type { ScoringCriterion, ScenarioType } from '../types';
 
 const { Option } = Select;
+const { TextArea } = Input;
 
 function Valuation() {
-  const { assets, selectedAssetId, updateScoringCriteria, recalculateScore } = useAppStore();
+  const { assets, selectedAssetId, updateScoringCriteria, recalculateScore, updateScenarioConfig, recalculateScenarios } = useAppStore();
   const asset = assets.find((a) => a.id === selectedAssetId);
   const [localCriteria, setLocalCriteria] = useState<ScoringCriterion[]>([]);
   const [weightModalOpen, setWeightModalOpen] = useState(false);
+  const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
+  const [currentScenario, setCurrentScenario] = useState<ScenarioType>('base');
+  const [scenarioForm] = Form.useForm();
   const [weightForm] = Form.useForm();
 
   useEffect(() => {
@@ -54,6 +63,22 @@ function Valuation() {
       </Card>
     );
   }
+
+  const scenarioConfig = asset.scenarioConfig;
+  const minValue = scenarioConfig ? Math.min(
+    scenarioConfig.conservative.estimatedValue,
+    scenarioConfig.base.estimatedValue,
+    scenarioConfig.optimistic.estimatedValue
+  ) : 0;
+  const maxValue = scenarioConfig ? Math.max(
+    scenarioConfig.conservative.estimatedValue,
+    scenarioConfig.base.estimatedValue,
+    scenarioConfig.optimistic.estimatedValue
+  ) : 0;
+  const avgPrice =
+    asset.historicalPrices.length > 0
+      ? asset.historicalPrices.reduce((s, p) => s + p.price, 0) / asset.historicalPrices.length
+      : 500000;
 
   const totalWeight = localCriteria.reduce((sum, c) => sum + c.weight, 0);
 
@@ -75,7 +100,7 @@ function Valuation() {
       return;
     }
     updateScoringCriteria(asset.id, localCriteria);
-    message.success('评分已保存并重新计算');
+    message.success('评分已保存并重新计算，情景测算数据已同步更新');
   };
 
   const handleResetWeights = async () => {
@@ -85,14 +110,13 @@ function Valuation() {
         const categories = [...new Set(prev.map((c) => c.category))];
         const catWeight = values.categoryWeight;
         const perCatWeight = Math.floor(catWeight / categories.length);
-        let remainingWeight = catWeight;
 
         return prev.map((c, idx) => {
           const sameCatItems = prev.filter((p) => p.category === c.category);
           const perItemWeight = Math.floor(perCatWeight / sameCatItems.length);
           if (idx === prev.length - 1) {
             const calcTotal = prev.slice(0, -1).reduce((s, p) => {
-              const sc = sameCatItems;
+              const sc = prev.filter((x) => x.category === p.category);
               return s + Math.floor(perCatWeight / sc.length);
             }, 0);
             return { ...c, weight: Math.max(0, catWeight - calcTotal) };
@@ -102,6 +126,34 @@ function Valuation() {
       });
       setWeightModalOpen(false);
       message.info('权重已重新分配，请检查后保存');
+    } catch {
+      // validation failed
+    }
+  };
+
+  const openScenarioModal = (type: ScenarioType) => {
+    setCurrentScenario(type);
+    const scenario = scenarioConfig?.[type];
+    if (scenario) {
+      scenarioForm.setFieldsValue({
+        priceMultiplier: scenario.priceMultiplier,
+        scoreMultiplier: scenario.scoreMultiplier,
+        note: scenario.note,
+      });
+    }
+    setScenarioModalOpen(true);
+  };
+
+  const handleSaveScenario = async () => {
+    try {
+      const values = await scenarioForm.validateFields();
+      updateScenarioConfig(asset.id, currentScenario, {
+        priceMultiplier: values.priceMultiplier,
+        scoreMultiplier: values.scoreMultiplier,
+        note: values.note,
+      });
+      setScenarioModalOpen(false);
+      message.success('情景参数已保存，估值已重新计算');
     } catch {
       // validation failed
     }
@@ -203,6 +255,61 @@ function Valuation() {
     return acc;
   }, {});
 
+  const renderScenarioCard = (type: ScenarioType) => {
+    const scenario = scenarioConfig?.[type];
+    if (!scenario) return null;
+    const labelInfo = scenarioLabels[type];
+    const Icon = type === 'conservative' ? FallOutlined : type === 'optimistic' ? RiseOutlined : MinusOutlined;
+
+    return (
+      <Card
+        size="small"
+        style={{
+          border: `2px solid ${labelInfo.color}`,
+          background: type === 'base' ? '#f0f5ff' : '#fff',
+          cursor: 'pointer',
+        }}
+        onClick={() => openScenarioModal(type)}
+        hoverable
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <Tag color={labelInfo.color} icon={<Icon />}>
+            {labelInfo.label}情景
+          </Tag>
+          <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)' }}>
+            价格×{scenario.priceMultiplier} 评分×{scenario.scoreMultiplier}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 24 }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', marginBottom: 2 }}>综合评分</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: getLevelProgressColor(scenario.totalScore) }}>
+              {scenario.totalScore}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', marginBottom: 2 }}>估值等级</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{scenario.valuationLevel}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', marginBottom: 2 }}>预估价值</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: labelInfo.color }}>
+              {formatMoney(scenario.estimatedValue)}
+            </div>
+          </div>
+        </div>
+        {scenario.note && (
+          <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', marginTop: 8, paddingTop: 8, borderTop: '1px dashed #f0f0f0' }}>
+            {scenario.note}
+          </div>
+        )}
+        <div style={{ textAlign: 'right', marginTop: 8, fontSize: 11, color: '#1677ff' }}>
+          点击调整参数 →
+        </div>
+      </Card>
+    );
+  };
+
   return (
     <div>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -246,6 +353,9 @@ function Valuation() {
             <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', marginTop: 8 }}>
               基于评分模型和历史交易数据综合计算
             </div>
+            <div style={{ fontSize: 12, color: '#1677ff', marginTop: 4 }}>
+              历史均价：{formatMoney(Math.round(avgPrice))}
+            </div>
           </Card>
         </Col>
         <Col span={8}>
@@ -269,11 +379,61 @@ function Valuation() {
         </Col>
       </Row>
 
+      <Card
+        className="asset-detail-card"
+        style={{ marginBottom: 16 }}
+        title={
+          <span className="form-section-title" style={{ marginBottom: 0 }}>
+            <ExperimentOutlined style={{ marginRight: 8, color: '#1677ff' }} />
+            情景测算 · 预估价值区间
+          </span>
+        }
+        extra={
+          <Button size="small" icon={<ReloadOutlined />} onClick={() => recalculateScenarios(asset.id)}>
+            重置为默认
+          </Button>
+        }
+      >
+        <div style={{ padding: '8px 16px 16px', background: '#fafafa', borderRadius: 8, marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', marginBottom: 4 }}>
+                预估价值区间（保守 → 乐观）
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 24, fontWeight: 700, color: '#52c41a' }}>{formatMoney(minValue)}</span>
+                <span style={{ fontSize: 18, color: '#d9d9d9' }}>~</span>
+                <span style={{ fontSize: 24, fontWeight: 700, color: '#fa8c16' }}>{formatMoney(maxValue)}</span>
+                <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', marginLeft: 12 }}>
+                  区间价差：{formatMoney(maxValue - minValue)}
+                </span>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', marginBottom: 4 }}>
+                基准情景估值
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#1677ff' }}>
+                {formatMoney(asset.estimatedValue)}
+              </div>
+            </div>
+          </div>
+        </div>
+        <Row gutter={[16, 16]}>
+          <Col span={8}>{renderScenarioCard('conservative')}</Col>
+          <Col span={8}>{renderScenarioCard('base')}</Col>
+          <Col span={8}>{renderScenarioCard('optimistic')}</Col>
+        </Row>
+        <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', marginTop: 12, textAlign: 'center' }}>
+          点击各情景卡片可调整价格系数和评分系数，测算依据将同步到报告中心
+        </div>
+      </Card>
+
       <Card className="asset-detail-card" style={{ marginBottom: 16 }}>
         <div className="form-section-title">维度得分分布</div>
         <Row gutter={[16, 16]}>
           {Object.entries(categoryStats).map(([cat, stats]) => {
-            const avgScore = stats.weight > 0 ? Math.round(stats.score / stats.weight * 10) / 10 : 0;
+            const avgScore = stats.weight > 0 ? Math.round((stats.score / stats.weight) * 10) / 10 : 0;
             return (
               <Col span={8} key={cat}>
                 <div style={{ padding: 16, background: '#fafafa', borderRadius: 8 }}>
@@ -283,7 +443,7 @@ function Valuation() {
                   </div>
                   <Progress
                     percent={avgScore}
-                    strokeColor={getLevelProgressColor(avgScore)}
+                    strokeColor={getLevelProgressColor(avgScore as number)}
                     format={(p) => <span style={{ color: getLevelProgressColor(avgScore as number) }}>{p}分</span>}
                   />
                 </div>
@@ -383,6 +543,67 @@ function Valuation() {
           <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', padding: 12, background: '#fafafa', borderRadius: 6 }}>
             系统将按照维度均匀分配权重，应用后可手动微调各指标权重。
           </div>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`${scenarioLabels[currentScenario].label}情景参数配置`}
+        open={scenarioModalOpen}
+        onOk={handleSaveScenario}
+        onCancel={() => setScenarioModalOpen(false)}
+        okText="保存并重新测算"
+        width={480}
+      >
+        <Form form={scenarioForm} layout="vertical" style={{ marginTop: 16 }}>
+          <div style={{ padding: 12, background: '#f0f5ff', borderRadius: 6, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)', marginBottom: 4 }}>
+              {scenarioLabels[currentScenario].desc}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)' }}>
+              当前历史均价：{formatMoney(Math.round(avgPrice))}，当前综合评分：{asset.totalScore}分
+            </div>
+          </div>
+          <Form.Item
+            label="历史均价系数"
+            name="priceMultiplier"
+            rules={[
+              { required: true, message: '请输入价格系数' },
+              { type: 'number', min: 0.5, max: 2, message: '系数范围 0.5 - 2.0' },
+            ]}
+            extra="对历史交易均价进行调整：0.5（下限）→ 1.0（基准）→ 2.0（上限）"
+          >
+            <InputNumber
+              min={0.5}
+              max={2}
+              step={0.1}
+              style={{ width: '100%' }}
+              placeholder="例如：0.8 表示按历史均价的80%测算"
+            />
+          </Form.Item>
+          <Form.Item
+            label="评分系数"
+            name="scoreMultiplier"
+            rules={[
+              { required: true, message: '请输入评分系数' },
+              { type: 'number', min: 0.8, max: 1.2, message: '系数范围 0.8 - 1.2' },
+            ]}
+            extra="对综合评分进行调整：0.8（扣减10%）→ 1.0（基准）→ 1.2（增加10%）"
+          >
+            <InputNumber
+              min={0.8}
+              max={1.2}
+              step={0.05}
+              style={{ width: '100%' }}
+              placeholder="例如：0.9 表示按综合评分的90%测算"
+            />
+          </Form.Item>
+          <Form.Item
+            label="测算说明"
+            name="note"
+            rules={[{ max: 100, message: '不超过100字' }]}
+          >
+            <TextArea rows={2} placeholder="可选，描述该情景的假设条件和依据" maxLength={100} showCount />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

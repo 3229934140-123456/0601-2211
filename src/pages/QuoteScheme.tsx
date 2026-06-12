@@ -46,6 +46,7 @@ function QuoteSchemePage() {
     updateQuoteScheme,
     removeQuoteScheme,
     addServiceCost,
+    updateServiceCost,
     removeServiceCost,
     selectQuoteScheme,
   } = useAppStore();
@@ -58,6 +59,7 @@ function QuoteSchemePage() {
 
   const [costModalOpen, setCostModalOpen] = useState(false);
   const [currentSchemeId, setCurrentSchemeId] = useState<string | null>(null);
+  const [editingCost, setEditingCost] = useState<ServiceCost | null>(null);
   const [costForm] = Form.useForm();
 
   const [compareView, setCompareView] = useState<'card' | 'table'>('card');
@@ -97,15 +99,21 @@ function QuoteSchemePage() {
     }
   };
 
-  const handleAddCost = async () => {
+  const handleSaveCost = async () => {
     try {
       const values = await costForm.validateFields();
       if (currentSchemeId) {
-        addServiceCost(asset.id, currentSchemeId, values);
-        message.success('添加成功');
+        if (editingCost) {
+          updateServiceCost(asset.id, currentSchemeId, editingCost.id, values);
+          message.success('更新成功');
+        } else {
+          addServiceCost(asset.id, currentSchemeId, values);
+          message.success('添加成功');
+        }
       }
       setCostModalOpen(false);
       setCurrentSchemeId(null);
+      setEditingCost(null);
       costForm.resetFields();
     } catch {
       // validation failed
@@ -324,11 +332,12 @@ function QuoteSchemePage() {
                         size="small"
                         onClick={() => {
                           setCurrentSchemeId(scheme.id);
+                          setEditingCost(null);
                           costForm.resetFields();
                           setCostModalOpen(true);
                         }}
                       >
-                        管理服务成本
+                        新增服务成本
                       </Button>
                       <Button
                         type={isSelected ? 'primary' : 'default'}
@@ -349,6 +358,20 @@ function QuoteSchemePage() {
                           <List.Item
                             style={{ padding: '4px 0', justifyContent: 'space-between' }}
                             actions={[
+                              <Button
+                                key="edit"
+                                type="text"
+                                size="small"
+                                icon={<EditOutlined />}
+                                onClick={() => {
+                                  setCurrentSchemeId(scheme.id);
+                                  setEditingCost(cost);
+                                  costForm.setFieldsValue(cost);
+                                  setCostModalOpen(true);
+                                }}
+                              >
+                                编辑
+                              </Button>,
                               <Popconfirm
                                 key="delete"
                                 title="删除此服务成本？"
@@ -417,7 +440,7 @@ function QuoteSchemePage() {
               title="服务总成本"
               key="serviceCost"
               width={140}
-              render={(_, r) => formatMoney(r.serviceCosts.reduce((s, c) => s + c.amount, 0))}
+              render={(_: unknown, r: QuoteScheme) => formatMoney(r.serviceCosts.reduce((s: number, c: ServiceCost) => s + c.amount, 0))}
             />
             <Table.Column
               title="总报价"
@@ -441,8 +464,8 @@ function QuoteSchemePage() {
                     type="link"
                     size="small"
                     onClick={() => {
-                      setEditingScheme(r);
-                      schemeForm.setFieldsValue(r);
+                      setEditingScheme(r as QuoteScheme);
+                      schemeForm.setFieldsValue(r as QuoteScheme);
                       setIsModalOpen(true);
                     }}
                   >
@@ -566,7 +589,7 @@ function QuoteSchemePage() {
                   min={0}
                   placeholder="请输入价格"
                   formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={(value) => value!.replace(/,/g, '') as unknown as number}
+                  parser={(value) => Number(value!.replace(/,/g, '')) as any}
                 />
               </Form.Item>
             </Col>
@@ -584,15 +607,16 @@ function QuoteSchemePage() {
       </Modal>
 
       <Modal
-        title="添加服务成本"
+        title={editingCost ? '编辑服务成本' : '添加服务成本'}
         open={costModalOpen}
-        onOk={handleAddCost}
+        onOk={handleSaveCost}
         onCancel={() => {
           setCostModalOpen(false);
           setCurrentSchemeId(null);
+          setEditingCost(null);
           costForm.resetFields();
         }}
-        okText="添加"
+        okText={editingCost ? '保存' : '添加'}
       >
         <Form form={costForm} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="name" label="服务名称" rules={[{ required: true, message: '请输入服务名称' }]}>
@@ -604,7 +628,7 @@ function QuoteSchemePage() {
               min={0}
               placeholder="请输入费用"
               formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-              parser={(value) => value!.replace(/,/g, '') as unknown as number}
+              parser={(value) => Number(value!.replace(/,/g, '')) as any}
             />
           </Form.Item>
           <Form.Item name="description" label="服务描述">
