@@ -488,6 +488,39 @@ export const useAppStore = create<AppState & StoreActions>((set, get) => ({
       });
     }
 
+    if (scope.industries && JSON.stringify(scope.industries) !== JSON.stringify(oldAsset.coverageScope.industries)) {
+      get().addModificationTrace(assetId, {
+        module: 'metrics',
+        action: 'update',
+        fieldName: 'coverageIndustries',
+        fieldLabel: '覆盖行业',
+        oldValue: oldAsset.coverageScope.industries.join('、') || '空',
+        newValue: scope.industries.join('、') || '空',
+      });
+    }
+
+    if (scope.population !== undefined && scope.population !== oldAsset.coverageScope.population && scope.population !== null) {
+      get().addModificationTrace(assetId, {
+        module: 'metrics',
+        action: 'update',
+        fieldName: 'coveragePopulation',
+        fieldLabel: '覆盖人口',
+        oldValue: oldAsset.coverageScope.population !== undefined ? `${oldAsset.coverageScope.population.toLocaleString()}人` : '空',
+        newValue: `${scope.population.toLocaleString()}人`,
+      });
+    }
+
+    if (scope.enterprises !== undefined && scope.enterprises !== oldAsset.coverageScope.enterprises && scope.enterprises !== null) {
+      get().addModificationTrace(assetId, {
+        module: 'metrics',
+        action: 'update',
+        fieldName: 'coverageEnterprises',
+        fieldLabel: '覆盖企业',
+        oldValue: oldAsset.coverageScope.enterprises !== undefined ? `${oldAsset.coverageScope.enterprises.toLocaleString()}家` : '空',
+        newValue: `${scope.enterprises.toLocaleString()}家`,
+      });
+    }
+
     if (scope.description !== undefined && scope.description !== oldAsset.coverageScope.description) {
       get().addModificationTrace(assetId, {
         module: 'metrics',
@@ -733,11 +766,10 @@ export const useAppStore = create<AppState & StoreActions>((set, get) => ({
     const oldScenario = asset.scenarioConfig[type];
     const newScenario = { ...oldScenario, ...updates };
 
-    const recalculated = calculateScenarioValue(
-      type,
-      asset.scoringCriteria.map((c) => ({ ...c, weight: c.weight * newScenario.scoreMultiplier })),
-      asset.historicalPrices.map((p) => ({ ...p, price: p.price * newScenario.priceMultiplier }))
-    );
+    const recalculated = calculateScenarioValue(type, asset.scoringCriteria, asset.historicalPrices, {
+      priceMultiplier: newScenario.priceMultiplier,
+      scoreMultiplier: newScenario.scoreMultiplier,
+    });
 
     newScenario.totalScore = recalculated.totalScore;
     newScenario.valuationLevel = recalculated.valuationLevel;
@@ -777,15 +809,24 @@ export const useAppStore = create<AppState & StoreActions>((set, get) => ({
     const newConfig: ScenarioConfig = {
       conservative: {
         ...currentConfig.conservative,
-        ...calculateScenarioValue('conservative', asset.scoringCriteria, asset.historicalPrices),
+        ...calculateScenarioValue('conservative', asset.scoringCriteria, asset.historicalPrices, {
+          priceMultiplier: currentConfig.conservative.priceMultiplier,
+          scoreMultiplier: currentConfig.conservative.scoreMultiplier,
+        }),
       },
       base: {
         ...currentConfig.base,
-        ...calculateScenarioValue('base', asset.scoringCriteria, asset.historicalPrices),
+        ...calculateScenarioValue('base', asset.scoringCriteria, asset.historicalPrices, {
+          priceMultiplier: currentConfig.base.priceMultiplier,
+          scoreMultiplier: currentConfig.base.scoreMultiplier,
+        }),
       },
       optimistic: {
         ...currentConfig.optimistic,
-        ...calculateScenarioValue('optimistic', asset.scoringCriteria, asset.historicalPrices),
+        ...calculateScenarioValue('optimistic', asset.scoringCriteria, asset.historicalPrices, {
+          priceMultiplier: currentConfig.optimistic.priceMultiplier,
+          scoreMultiplier: currentConfig.optimistic.scoreMultiplier,
+        }),
       },
       updatedAt: new Date().toISOString(),
     };

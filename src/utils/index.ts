@@ -141,7 +141,8 @@ export const calculateTotalScore = (criteria: ScoringCriterion[]): number => {
 export const calculateScenarioValue = (
   type: ScenarioType,
   criteria: ScoringCriterion[],
-  historicalPrices: HistoricalPrice[]
+  historicalPrices: HistoricalPrice[],
+  customMultipliers?: { priceMultiplier?: number; scoreMultiplier?: number }
 ): { totalScore: number; valuationLevel: ValuationLevel; estimatedValue: number; priceMultiplier: number; scoreMultiplier: number } => {
   const baseScore = calculateTotalScore(criteria);
   const avgPrice =
@@ -149,25 +150,27 @@ export const calculateScenarioValue = (
       ? historicalPrices.reduce((sum, p) => sum + p.price, 0) / historicalPrices.length
       : 500000;
 
-  const multipliers: Record<ScenarioType, { price: number; score: number }> = {
+  const defaultMultipliers: Record<ScenarioType, { price: number; score: number }> = {
     conservative: { price: 0.8, score: 0.9 },
     base: { price: 1.0, score: 1.0 },
     optimistic: { price: 1.2, score: 1.1 },
   };
 
-  const m = multipliers[type];
-  const adjustedScore = Math.min(100, Math.max(0, Math.round(baseScore * m.score * 10) / 10));
+  const priceMultiplier = customMultipliers?.priceMultiplier ?? defaultMultipliers[type].price;
+  const scoreMultiplier = customMultipliers?.scoreMultiplier ?? defaultMultipliers[type].score;
+
+  const adjustedScore = Math.min(100, Math.max(0, Math.round(baseScore * scoreMultiplier * 10) / 10));
   const level = calculateValuationLevel(adjustedScore);
-  const baseValue = avgPrice * m.price;
-  const multiplier = 0.5 + (adjustedScore / 100) * 1.5;
-  const estimatedValue = Math.round(baseValue * multiplier);
+  const baseValue = avgPrice * priceMultiplier;
+  const valueFactor = 0.5 + (adjustedScore / 100) * 1.5;
+  const estimatedValue = Math.round(baseValue * valueFactor);
 
   return {
     totalScore: adjustedScore,
     valuationLevel: level,
     estimatedValue,
-    priceMultiplier: m.price,
-    scoreMultiplier: m.score,
+    priceMultiplier,
+    scoreMultiplier,
   };
 };
 
