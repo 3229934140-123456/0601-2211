@@ -97,20 +97,41 @@ function ReportCenter() {
       addText(`Report Type: ${reportType === 'single' ? 'Single Asset Report' : 'Summary Report'}`, 10);
 
       if (reportType === 'single' && asset) {
-        y += 4;
-        addText('1. Basic Information', 14, 'bold');
-        addText(`Asset Name: ${asset.name}`, 11);
-        addText(`Asset Code: ${asset.code}`, 11);
-        addText(`Category: ${asset.category}`, 11);
-        addText(`Industry: ${asset.industry}`, 11);
-        addText(`Owner: ${asset.owner || 'N/A'}`, 11);
-        addText(`Department: ${asset.department || 'N/A'}`, 11);
-        addText(`Status: ${asset.status.toUpperCase()}`, 11);
+        let sectionNum = 1;
+
+        if (includeSections.includes('basic')) {
+          y += 4;
+          addText(`${sectionNum}. Basic Information`, 14, 'bold');
+          addText(`Asset Name: ${asset.name}`, 11);
+          addText(`Asset Code: ${asset.code}`, 11);
+          addText(`Category: ${asset.category}`, 11);
+          addText(`Industry: ${asset.industry}`, 11);
+          addText(`Owner: ${asset.owner || 'N/A'}`, 11);
+          addText(`Department: ${asset.department || 'N/A'}`, 11);
+          addText(`Status: ${asset.status.toUpperCase()}`, 11);
+          sectionNum++;
+        }
+
+        if (includeSections.includes('metrics')) {
+          y += 4;
+          if (y > 250) { doc.addPage(); y = 20; }
+          addText(`${sectionNum}. Metrics Data`, 14, 'bold');
+          addText(`Data Sources: ${asset.dataSources || 'N/A'}`, 11);
+          addText(`Update Frequency: ${asset.updateFrequency || 'N/A'}`, 11);
+          addText(`Data Volume: ${asset.dataVolume || 'N/A'}`, 11);
+          addText(`Coverage Scope: ${asset.coverageScope || 'N/A'}`, 11);
+          const avgP = asset.historicalPrices.length > 0
+            ? Math.round(asset.historicalPrices.reduce((s, p) => s + p.price, 0) / asset.historicalPrices.length)
+            : 0;
+          addText(`Historical Avg Price: ${formatMoney(avgP)}`, 11);
+          addText(`Historical Transactions: ${asset.historicalPrices.length} records`, 11);
+          sectionNum++;
+        }
 
         if (includeSections.includes('valuation')) {
           y += 4;
           if (y > 250) { doc.addPage(); y = 20; }
-          addText('2. Valuation Result', 14, 'bold');
+          addText(`${sectionNum}. Valuation Result`, 14, 'bold');
           addText(`Valuation Level: ${asset.valuationLevel}`, 11);
           addText(`Total Score: ${asset.totalScore}/100`, 11);
           addText(`Estimated Value: ${formatMoney(asset.estimatedValue)}`, 11);
@@ -131,12 +152,13 @@ function ReportCenter() {
             headStyles: { fillColor: [22, 119, 255] },
           });
           y = (doc as any).lastAutoTable.finalY + 10;
+          sectionNum++;
         }
 
         if (includeSections.includes('scenario') && asset.scenarioConfig) {
           y += 4;
           if (y > 250) { doc.addPage(); y = 20; }
-          addText('3. Scenario Analysis', 14, 'bold');
+          addText(`${sectionNum}. Scenario Analysis`, 14, 'bold');
           addText('Price and score multipliers simulate different market scenarios', 10);
 
           const scenarioData = [
@@ -161,16 +183,17 @@ function ReportCenter() {
           y = (doc as any).lastAutoTable.finalY + 8;
 
           addText(`Value Range: ${formatMoney(asset.scenarioConfig.conservative.estimatedValue)} - ${formatMoney(asset.scenarioConfig.optimistic.estimatedValue)}`, 10);
-          const volatility = (((asset.scenarioConfig.optimistic.estimatedValue - asset.scenarioConfig.conservative.estimatedValue) / 2 / asset.estimatedValue) * 100).toFixed(1);
+          const baseValue = asset.scenarioConfig.base.estimatedValue > 0 ? asset.scenarioConfig.base.estimatedValue : 1;
+          const volatility = (((asset.scenarioConfig.optimistic.estimatedValue - asset.scenarioConfig.conservative.estimatedValue) / 2 / baseValue) * 100).toFixed(1);
           addText(`Volatility: ±${volatility}%`, 10);
           y += 4;
+          sectionNum++;
         }
 
         if (includeSections.includes('risk')) {
           y += 4;
           if (y > 250) { doc.addPage(); y = 20; }
-          const riskSectionNum = includeSections.includes('scenario') && asset.scenarioConfig ? '4' : '3';
-          addText(`${riskSectionNum}. Risk Assessment`, 14, 'bold');
+          addText(`${sectionNum}. Risk Assessment`, 14, 'bold');
           if (asset.risks.length > 0) {
             const riskData = asset.risks.map((r) => [
               riskTypeLabel[r.type],
@@ -189,18 +212,13 @@ function ReportCenter() {
           } else {
             addText('No risks identified.', 11);
           }
+          sectionNum++;
         }
 
         if (includeSections.includes('quote')) {
           y += 4;
           if (y > 250) { doc.addPage(); y = 20; }
-          let quoteSectionNum = '4';
-          if (includeSections.includes('risk')) {
-            quoteSectionNum = includeSections.includes('scenario') && asset.scenarioConfig ? '5' : '4';
-          } else if (includeSections.includes('scenario') && asset.scenarioConfig) {
-            quoteSectionNum = '4';
-          }
-          addText(`${quoteSectionNum}. Quote Schemes`, 14, 'bold');
+          addText(`${sectionNum}. Quote Schemes`, 14, 'bold');
           if (asset.quoteSchemes.length > 0) {
             const quoteData = asset.quoteSchemes.map((q) => [
               q.name,
@@ -221,13 +239,14 @@ function ReportCenter() {
           } else {
             addText('No quote schemes defined.', 11);
           }
+          sectionNum++;
         }
 
         if (includeSections.includes('quoteDetail') && asset.quoteSchemes.length > 0) {
-          asset.quoteSchemes.forEach((scheme, idx) => {
+          asset.quoteSchemes.forEach((scheme) => {
             y += 4;
             if (y > 230) { doc.addPage(); y = 20; }
-            addText(`Quote Detail - ${scheme.name}`, 12, 'bold');
+            addText(`${sectionNum}. Quote Detail - ${scheme.name}`, 12, 'bold');
             addText(`Pricing Model: ${scheme.pricingModel}`, 10);
             addText(`Base Price: ${formatMoney(scheme.basePrice)}`, 10);
             const serviceTotal = scheme.serviceCosts.reduce((s, c) => s + c.amount, 0);
@@ -253,6 +272,33 @@ function ReportCenter() {
               y += 4;
             }
           });
+          sectionNum++;
+        }
+
+        if (includeSections.includes('approval')) {
+          y += 4;
+          if (y > 250) { doc.addPage(); y = 20; }
+          addText(`${sectionNum}. Approval Records`, 14, 'bold');
+          if (asset.approvalRecords.length > 0) {
+            const approvalData = asset.approvalRecords.slice(0, 5).map((r) => [
+              formatDateTime(r.timestamp),
+              r.approver,
+              r.role,
+              r.action === 'submit' ? 'Submit' : r.action === 'approve' ? 'Approve' : 'Reject',
+              r.comment || '-',
+            ]);
+            (doc as any).autoTable({
+              startY: y,
+              head: [['Time', 'Operator', 'Role', 'Action', 'Comment']],
+              body: approvalData,
+              styles: { fontSize: 8 },
+              headStyles: { fillColor: [150, 150, 150] },
+            });
+            y = (doc as any).lastAutoTable.finalY + 10;
+          } else {
+            addText('No approval records.', 11);
+          }
+          sectionNum++;
         }
 
         if (includeSections.includes('versionDiff')) {
@@ -262,7 +308,7 @@ function ReportCenter() {
           if (submitRecords.length > 0) {
             y += 4;
             if (y > 250) { doc.addPage(); y = 20; }
-            addText('Version Comparison', 14, 'bold');
+            addText(`${sectionNum}. Version Comparison`, 14, 'bold');
 
             submitRecords.slice(0, 2).forEach((record) => {
               if (y > 230) { doc.addPage(); y = 20; }
@@ -288,6 +334,7 @@ function ReportCenter() {
                 y += 4;
               }
             });
+            sectionNum++;
           }
         }
       } else {
@@ -349,17 +396,25 @@ function ReportCenter() {
     if (reportType === 'single' && asset) {
       const filteredAsset: Record<string, unknown> = {
         id: asset.id,
-        name: asset.name,
-        code: asset.code,
-        category: asset.category,
-        industry: asset.industry,
-        description: asset.description,
-        owner: asset.owner,
-        department: asset.department,
-        status: asset.status,
-        createdAt: asset.createdAt,
-        updatedAt: asset.updatedAt,
+        _exportMetadata: {
+          reportType: 'single-asset',
+          exportedAt: new Date().toISOString(),
+          includedSections: includeSections,
+        },
       };
+
+      if (includeSections.includes('basic')) {
+        filteredAsset.name = asset.name;
+        filteredAsset.code = asset.code;
+        filteredAsset.category = asset.category;
+        filteredAsset.industry = asset.industry;
+        filteredAsset.description = asset.description;
+        filteredAsset.owner = asset.owner;
+        filteredAsset.department = asset.department;
+        filteredAsset.status = asset.status;
+        filteredAsset.createdAt = asset.createdAt;
+        filteredAsset.updatedAt = asset.updatedAt;
+      }
 
       if (includeSections.includes('metrics')) {
         filteredAsset.dataSources = asset.dataSources;
@@ -449,12 +504,6 @@ function ReportCenter() {
           traces: r.traces || [],
         }));
       }
-
-      filteredAsset.exportMetadata = {
-        reportType: 'single-asset',
-        exportedAt: new Date().toISOString(),
-        includedSections: includeSections,
-      };
 
       dataToExport = filteredAsset;
     }

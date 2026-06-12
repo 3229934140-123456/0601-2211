@@ -1138,7 +1138,7 @@ export const useAppStore = create<AppState & StoreActions>((set, get) => ({
 
     const snapshot = JSON.parse(JSON.stringify(asset));
     const lastSubmitRecord = [...asset.approvalRecords].reverse().find((r) => r.action === 'submit');
-    const previousSnapshot = lastSubmitRecord?.previousSnapshot;
+    const previousSnapshot = lastSubmitRecord?.nextSnapshot;
 
     let versionDiff = undefined;
     let traces = [...asset.modificationTraces];
@@ -1148,7 +1148,7 @@ export const useAppStore = create<AppState & StoreActions>((set, get) => ({
         assetId,
         lastSubmitRecord?.id || '',
         '',
-        previousSnapshot,
+        previousSnapshot as DataAsset,
         snapshot
       );
     }
@@ -1359,6 +1359,7 @@ export const useAppStore = create<AppState & StoreActions>((set, get) => ({
         : a
     );
     set({ assets: finalAssets });
+    saveToStorage({ ...get(), assets: finalAssets });
   },
 
   recordFieldChange: (assetId, module, action, options) => {
