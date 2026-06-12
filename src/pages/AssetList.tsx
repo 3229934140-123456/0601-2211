@@ -54,8 +54,9 @@ function AssetList() {
   const [form] = Form.useForm();
 
   const filteredAssets = assets.filter((asset) => {
+    const statusF = statusFilter || 'all';
     if (industryFilter !== 'all' && asset.industry !== industryFilter) return false;
-    if (statusFilter !== 'all' && asset.status !== statusFilter) return false;
+    if (statusF !== 'all' && asset.status !== statusF) return false;
     if (searchText) {
       const lowerSearch = searchText.toLowerCase();
       return (

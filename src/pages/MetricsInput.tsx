@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Card,
   Form,
@@ -28,6 +28,7 @@ import {
   ReloadOutlined,
   AppstoreOutlined,
   HistoryOutlined,
+  SaveOutlined,
 } from '@ant-design/icons';
 import { useAppStore } from '../store/useAppStore';
 import { frequencyLabel, formatMoney, formatDate } from '../utils';
@@ -46,6 +47,7 @@ function MetricsInput() {
     removeDataSource,
     updateCoverageScope,
     setUpdateFrequency,
+    setDataVolume,
     addApplicationScenario,
     removeApplicationScenario,
     addHistoricalPrice,
@@ -66,6 +68,17 @@ function MetricsInput() {
   const [priceForm] = Form.useForm();
 
   const [basicForm] = Form.useForm();
+  const [scopeDesc, setScopeDesc] = useState('');
+
+  useEffect(() => {
+    if (asset) {
+      basicForm.setFieldsValue({
+        updateFrequency: asset.updateFrequency,
+        dataVolume: asset.dataVolume,
+      });
+      setScopeDesc(asset.coverageScope.description || '');
+    }
+  }, [selectedAssetId, asset?.id]);
 
   if (!asset) {
     return (
@@ -234,11 +247,32 @@ function MetricsInput() {
   const handleBasicSave = async () => {
     try {
       const values = await basicForm.validateFields();
-      updateAsset(asset.id, values);
+      setUpdateFrequency(asset.id, values.updateFrequency);
+      setDataVolume(asset.id, values.dataVolume);
       message.success('保存成功');
     } catch {
       // validation failed
     }
+  };
+
+  const handleRegionsChange = (val: string[]) => {
+    updateCoverageScope(asset.id, { regions: val });
+  };
+
+  const handleIndustriesChange = (val: string[]) => {
+    updateCoverageScope(asset.id, { industries: val });
+  };
+
+  const handlePopulationChange = (val: number | null) => {
+    updateCoverageScope(asset.id, { population: val as number });
+  };
+
+  const handleEnterprisesChange = (val: number | null) => {
+    updateCoverageScope(asset.id, { enterprises: val as number });
+  };
+
+  const handleScopeDescBlur = () => {
+    updateCoverageScope(asset.id, { description: scopeDesc });
   };
 
   return (
@@ -266,12 +300,17 @@ function MetricsInput() {
             数据更新与规模
           </span>
         }
+        extra={
+          <Button type="primary" size="small" icon={<SaveOutlined />} onClick={handleBasicSave}>
+            保存
+          </Button>
+        }
       >
-        <Form form={basicForm} layout="vertical" initialValues={{ updateFrequency: asset.updateFrequency, dataVolume: asset.dataVolume }}>
+        <Form form={basicForm} layout="vertical">
           <Row gutter={24}>
             <Col span={8}>
               <Form.Item label="更新频率" name="updateFrequency" rules={[{ required: true, message: '请选择更新频率' }]}>
-                <Select onChange={(val: UpdateFrequency) => setUpdateFrequency(asset.id, val)}>
+                <Select>
                   {Object.entries(frequencyLabel).map(([key, label]) => (
                     <Option key={key} value={key}>
                       {label}
@@ -281,7 +320,7 @@ function MetricsInput() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item label="最近更新" name="lastUpdated">
+              <Form.Item label="最近更新">
                 <Input value={formatDate(asset.lastUpdated)} disabled />
               </Form.Item>
             </Col>
@@ -291,11 +330,6 @@ function MetricsInput() {
               </Form.Item>
             </Col>
           </Row>
-          <div style={{ textAlign: 'right' }}>
-            <Button type="primary" onClick={handleBasicSave}>
-              保存
-            </Button>
-          </div>
         </Form>
       </Card>
 
@@ -351,7 +385,7 @@ function MetricsInput() {
                   mode="tags"
                   placeholder="输入或选择覆盖地区"
                   value={asset.coverageScope.regions}
-                  onChange={(val) => updateCoverageScope(asset.id, { regions: val })}
+                  onChange={handleRegionsChange}
                   style={{ width: '100%' }}
                   tokenSeparators={[',']}
                 >
@@ -369,7 +403,7 @@ function MetricsInput() {
                   mode="tags"
                   placeholder="输入或选择覆盖行业"
                   value={asset.coverageScope.industries}
-                  onChange={(val) => updateCoverageScope(asset.id, { industries: val })}
+                  onChange={handleIndustriesChange}
                   style={{ width: '100%' }}
                   tokenSeparators={[',']}
                 >
@@ -392,7 +426,7 @@ function MetricsInput() {
                   style={{ width: '100%' }}
                   placeholder="覆盖人口数"
                   value={asset.coverageScope.population}
-                  onChange={(val) => updateCoverageScope(asset.id, { population: val as number })}
+                  onChange={handlePopulationChange}
                   formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                   parser={(value) => value!.replace(/,/g, '') as unknown as number}
                 />
@@ -404,7 +438,7 @@ function MetricsInput() {
                   style={{ width: '100%' }}
                   placeholder="覆盖企业数"
                   value={asset.coverageScope.enterprises}
-                  onChange={(val) => updateCoverageScope(asset.id, { enterprises: val as number })}
+                  onChange={handleEnterprisesChange}
                   formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                   parser={(value) => value!.replace(/,/g, '') as unknown as number}
                 />
@@ -423,8 +457,9 @@ function MetricsInput() {
             <TextArea
               rows={2}
               placeholder="详细描述数据覆盖范围"
-              value={asset.coverageScope.description}
-              onChange={(e) => updateCoverageScope(asset.id, { description: e.target.value })}
+              value={scopeDesc}
+              onChange={(e) => setScopeDesc(e.target.value)}
+              onBlur={handleScopeDescBlur}
             />
           </Form.Item>
         </Form>
